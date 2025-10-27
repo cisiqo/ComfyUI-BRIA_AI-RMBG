@@ -5,6 +5,7 @@ from PIL import Image
 from .briarmbg import BriaRMBG
 from torchvision.transforms.functional import normalize
 import numpy as np
+from .blurfusion_foreground_estimation import FB_blur_fusion_foreground_estimator_2
 
 current_directory = os.path.dirname(os.path.abspath(__file__))
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -57,6 +58,10 @@ class BRIA_RMBG_Zho:
             "required": {
                 "rmbgmodel": ("RMBGMODEL",),
                 "image": ("IMAGE",),
+            },
+           "optional": {
+                "edge_optimization": ("BOOLEAN", {"default": True}),
+                "blur_ksize": ("INT", {"default": 90, "min": 0, "max": 90, "step": 5}),
             }
         }
 
@@ -65,7 +70,7 @@ class BRIA_RMBG_Zho:
     FUNCTION = "remove_background"
     CATEGORY = "🧹BRIA RMBG"
   
-    def remove_background(self, rmbgmodel, image):
+    def remove_background(self, rmbgmodel, image, edge_optimization=True, blur_ksize=90):
         processed_images = []
         processed_masks = []
 
@@ -88,8 +93,12 @@ class BRIA_RMBG_Zho:
             result = (result-mi)/(ma-mi)    
             im_array = (result*255).cpu().data.numpy().astype(np.uint8)
             pil_im = Image.fromarray(np.squeeze(im_array))
-            new_im = Image.new("RGBA", pil_im.size, (0,0,0,0))
-            new_im.paste(orig_image, mask=pil_im)
+            
+            if edge_optimization:
+                new_im = refine_foreground(orig_image, pil_im, r=blur_ksize)
+            else:
+                new_im = Image.new("RGBA", pil_im.size, (0,0,0,0))
+                new_im.paste(orig_image, mask=pil_im)
 
             new_im_tensor = pil2tensor(new_im)  # 将PIL图像转换为Tensor
             pil_im_tensor = pil2tensor(pil_im)  # 同上
@@ -101,7 +110,20 @@ class BRIA_RMBG_Zho:
         new_masks = torch.cat(processed_masks, dim=0)
 
         return new_ims, new_masks
-        
+
+def refine_foreground(image: Image.Image, mask: Image.Image, r=90):
+    if mask.size != image.size:
+        mask = mask.resize(image.size)
+    image = image.convert("RGB")
+    image_array = np.array(image) / 255.0
+    alpha_array = np.array(mask) / 255.0
+    estimated_foreground = FB_blur_fusion_foreground_estimator_2(
+        image_array, alpha_array, r=r
+    )
+    image_masked = Image.fromarray((estimated_foreground * 255.0).astype(np.uint8))
+    image_masked.putalpha(mask.resize(image.size))
+    return image_masked
+      
 
 NODE_CLASS_MAPPINGS = {
     "BRIA_RMBG_ModelLoader_Zho": BRIA_RMBG_ModelLoader_Zho,
