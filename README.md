@@ -48,6 +48,10 @@ https://github.com/ZHO-ZHO-ZHO/ComfyUI-BRIA_AI-RMBG/assets/140084057/fdae7655-bc
 
 ## 更新日志
 
+- 20251027
+
+  添加了边缘优化
+
 - 20240207
 
   V1.5 支持批量处理、新增输出 mask 功能
